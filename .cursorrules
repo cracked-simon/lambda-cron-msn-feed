@@ -1,0 +1,27 @@
+# Cursor Rules for RSS-to-MSN Feed Converter Lambda
+
+This is a Node.js AWS Lambda project that converts RSS feeds into MSN-compliant feeds. Please refer to the README.md file for detailed project information, requirements, and functionality.
+
+## Project Context
+
+- **Runtime**: Node.js
+- **Platform**: AWS Lambda
+- **Purpose**: Convert RSS feeds (currently WordPress) to MSN-compliant XML format
+- **Key Features**: Profanity filtering, S3 storage, CloudFront invalidation
+- **Architecture**: Pluggable drivers for different feed types
+
+## Development Guidelines
+
+- Follow Node.js best practices and AWS Lambda conventions
+- Use the existing CKUtils function for environment variable loading (avoid duplicating dotenv configuration)
+- Maintain the driver architecture for extensibility
+- Ensure proper error handling for external API calls (profanity list, RSS feeds)
+- Include appropriate logging for monitoring and debugging
+
+## Key Dependencies
+
+- AWS SDK for S3 and CloudFront operations
+- RSS/XML parsing libraries
+- HTTP client for downloading profanity lists and RSS feeds
+
+For complete project details, environment variables, and requirements, see README.md.

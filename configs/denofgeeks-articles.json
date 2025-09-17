@@ -1,0 +1,19 @@
+{
+  "name": "Den of Geeks - Articles",
+  "description": "Configuration for Den of Geeks article feed",
+  "overrides": {
+    "EXTERNAL_FEED_URL": "https://www.denofgeek.com",
+    "EXTERNAL_FEED_SOURCE": "denofgeeks",
+    "EXTERNAL_FEED_TYPE": "article",
+    "FEED_FILE_NAME": "denofgeeks-articles.xml",
+    "WP_API_TOKEN": "your-denofgeek-api-token-here",
+    "WP_API_POSTS_FILTER": "topic",
+    "WP_API_POSTS_FILTER_VALUE": "msn_article",
+    "SITE_NAME": "Den of Geek",
+    "SITE_DESCRIPTION": "Den of Geek delivers the latest news and features on movies, TV, games, books, and comics.",
+    "SITE_LANGUAGE": "en-us",
+    "SITE_COPYRIGHT": "Den of Geek",
+    "FEED_ITEMS_PER_RUN": 2,
+    "FEED_MAX_TOTAL_ITEMS": 20
+  }
+}
