@@ -9,8 +9,10 @@ function loadEnvironmentVariables() {
     const isLambda = process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_RUNTIME_DIR;
     
     if (!isLambda) {
-        // Load .env file for local development
-        dotenv.config();
+        // Load .env file from project root, not current working directory
+        const path = require('path');
+        const envPath = path.join(__dirname, '..', '.env');
+        dotenv.config({ path: envPath });
         console.log('Loaded environment variables from .env file');
     } else {
         console.log('Running in AWS Lambda - using runtime environment variables');

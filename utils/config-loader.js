@@ -47,11 +47,14 @@ class ConfigLoader {
      */
     loadEnvironmentVariables() {
         const dotenv = require('dotenv');
+        const path = require('path');
         
         if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
             console.log('Running in AWS Lambda - using runtime environment variables');
         } else {
-            dotenv.config(); // Load .env file for local development
+            // Load .env file from project root, not current working directory
+            const envPath = path.join(__dirname, '..', '.env');
+            dotenv.config({ path: envPath });
             console.log('Loaded environment variables from .env file');
         }
 
@@ -107,8 +110,14 @@ class ConfigLoader {
      */
     async loadConfigFile(configFilePath) {
         try {
-            // Resolve relative paths
-            const fullPath = path.resolve(configFilePath);
+            // If configFilePath is relative, resolve it relative to the project root
+            let fullPath;
+            if (path.isAbsolute(configFilePath)) {
+                fullPath = configFilePath;
+            } else {
+                // Resolve relative to project root (where index.js is located)
+                fullPath = path.join(__dirname, '..', configFilePath);
+            }
             
             // Check if file exists
             await fs.access(fullPath);
