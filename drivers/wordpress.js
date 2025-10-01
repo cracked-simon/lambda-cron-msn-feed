@@ -1,15 +1,86 @@
 const cheerio = require('cheerio');
-const { BaseDriver } = require('./index');
+const { safeLog } = require('../utils/sensitive-data');
 
 /**
  * WordPress REST API driver
  */
-class WordPressDriver extends BaseDriver {
+class WordPressDriver {
     constructor() {
-        super();
         this.name = 'WordPress';
         this.supportedFormats = ['rest-api'];
         this.postsPerPage = 20; // Hard-coded for now
+    }
+    
+    /**
+     * Generate hash for content tracking
+     * @param {string} guid - Unique identifier
+     * @returns {string} SHA256 hash
+     */
+    generateHash(guid) {
+        const crypto = require('crypto');
+        return crypto
+            .createHash('sha256')
+            .update(`${this.name}:${guid}`)
+            .digest('hex');
+    }
+    
+    /**
+     * Clean post content during ingestion - remove script tags and ad-dog divs
+     * @param {Object} post - Raw WordPress post
+     * @returns {Object} Cleaned post object
+     */
+    cleanPostContent(post) {
+        // Create a deep copy of the post to avoid modifying the original
+        const cleanedPost = JSON.parse(JSON.stringify(post));
+        
+        // Clean the content.rendered field if it exists
+        if (cleanedPost.content && cleanedPost.content.rendered) {
+            cleanedPost.content.rendered = this.cleanHtmlContent(cleanedPost.content.rendered);
+        }
+        
+        // Clean the excerpt.rendered field if it exists
+        if (cleanedPost.excerpt && cleanedPost.excerpt.rendered) {
+            cleanedPost.excerpt.rendered = this.cleanHtmlContent(cleanedPost.excerpt.rendered);
+        }
+        
+        return cleanedPost;
+    }
+    
+    /**
+     * Clean HTML content by removing script tags and ad-dog divs
+     * @param {string} htmlContent - Raw HTML content
+     * @returns {string} Cleaned HTML content
+     */
+    cleanHtmlContent(htmlContent) {
+        if (!htmlContent) return htmlContent;
+        
+        const $ = cheerio.load(htmlContent);
+        
+        // Remove all script tags
+        $('script').remove();
+        
+        // Remove all div tags with class names containing "ad-dog"
+        $('div[class*="ad-dog"]').remove();
+        
+        // Remove html, head, and body tags if they exist
+        $('head').remove();
+        $('body').contents().unwrap();
+        $('html').contents().unwrap();
+        
+        // Get the cleaned content
+        return $.html();
+    }
+    
+    /**
+     * Decode HTML entities in text
+     * @param {string} text - Text with HTML entities
+     * @returns {string} Decoded text
+     */
+    decodeHtmlEntities(text) {
+        if (!text) return text;
+        
+        const $ = cheerio.load(text);
+        return $.text();
     }
     
     /**
@@ -20,7 +91,7 @@ class WordPressDriver extends BaseDriver {
      */
     async ingest(config, db) {
         try {
-            console.log(`Ingesting WordPress posts from: ${config.EXTERNAL_FEED_URL}`);
+            safeLog(console.log, `Ingesting WordPress posts from: ${config.EXTERNAL_FEED_URL}`);
             
             // Check if this is a new source
             const isNewSource = await db.isNewSource(config);
@@ -43,8 +114,14 @@ class WordPressDriver extends BaseDriver {
                     console.log(`Total pages available: ${totalPages} (total posts: ${headers['x-wp-total'] || 'unknown'})`);
                 }
                 
+                // Enrich posts with category names
+                const enrichedPosts = await this.enrichPostsWithCategories(config.EXTERNAL_FEED_URL, posts, config);
+                
                 // Process and insert posts directly to database
-                for (const post of posts) {
+                for (const post of enrichedPosts) {
+                    // Clean the post content during ingestion
+                    const cleanedPost = this.cleanPostContent(post);
+                    
                     const item = {
                         guid: post.id,
                         content_hash: this.generateHash(post.id),
@@ -55,8 +132,8 @@ class WordPressDriver extends BaseDriver {
                             link: post.link,
                             author: post.author_name || ''
                         },
-                        // WordPress provides full content in listing, so store it
-                        fullContent: post
+                        // WordPress provides full content in listing, so store it (cleaned)
+                        fullContent: cleanedPost
                     };
                     
                     const wasInserted = await db.insertItemDirect(item, config);
@@ -100,7 +177,7 @@ class WordPressDriver extends BaseDriver {
      */
     async fetchContent(contentHash, config, db) {
         try {
-            console.log(`Fetching content from database for hash: ${contentHash}`);
+            safeLog(console.log, `Fetching content from database for hash: ${contentHash}`);
             
             // Get item from database
             const dbItem = await db.getItemByHash(contentHash, config.EXTERNAL_FEED_SOURCE);
@@ -110,7 +187,8 @@ class WordPressDriver extends BaseDriver {
             
             // Return the stored full content
             if (dbItem.full_content) {
-                return JSON.parse(dbItem.full_content);
+                // MySQL2 automatically parses JSON fields, so no need to JSON.parse
+                return dbItem.full_content;
             }
             
             throw new Error(`No full content stored for hash: ${contentHash}`);
@@ -133,8 +211,8 @@ class WordPressDriver extends BaseDriver {
         const parsedContent = this.parseContent(rawContent, feedType);
         
         return {
-            title: post.title?.rendered || 'Untitled',
-            shortTitle: post.title?.rendered || '', // Can be customized if needed
+            title: this.decodeHtmlEntities(post.title?.rendered) || 'Untitled',
+            shortTitle: this.decodeHtmlEntities(post.title?.rendered) || '', // Can be customized if needed
             description: post.excerpt?.rendered || '',
             content: parsedContent.content,
             link: post.link || '',
@@ -158,13 +236,18 @@ class WordPressDriver extends BaseDriver {
      */
     async fetchPostsPage(baseUrl, config, page = 1) {
         try {
-            const filterParam = config.WP_API_POSTS_FILTER || 'topic';
+            const filterParam = config.WP_API_POSTS_FILTER || '';
             const filterValue = config.WP_API_POSTS_FILTER_VALUE || '';
             
             // Build the API URL with pagination
-            const apiUrl = `${baseUrl}/wp-json/wp/v2/posts?${filterParam}=${encodeURIComponent(filterValue)}&per_page=${this.postsPerPage}&page=${page}&_embed=1`;
+            let apiUrl = `${baseUrl}/wp-json/wp/v2/posts?per_page=${this.postsPerPage}&page=${page}&_embed=1`;
             
-            console.log(`Fetching WordPress posts from: ${apiUrl}`);
+            // Add filter parameters only if they are provided
+            if (filterParam && filterValue) {
+                apiUrl += `&${filterParam}=${encodeURIComponent(filterValue)}`;
+            }
+            
+            safeLog(console.log, `Fetching WordPress posts from: ${apiUrl}`);
             
             const headers = {
                 'Content-Type': 'application/json'
@@ -349,12 +432,11 @@ class WordPressDriver extends BaseDriver {
      */
     normalizePost(post, feedType = '') {
         const rawContent = post.content?.rendered || '';
-        const categories = this.extractPostCategories(post);
         const parsedContent = this.parseContent(rawContent, feedType);
         
         return {
-            title: post.title?.rendered || 'Untitled',
-            shortTitle: post.title?.rendered || '', // Can be customized if needed
+            title: this.decodeHtmlEntities(post.title?.rendered) || 'Untitled',
+            shortTitle: this.decodeHtmlEntities(post.title?.rendered) || '', // Can be customized if needed
             description: post.excerpt?.rendered || '',
             content: parsedContent.content,
             link: post.link || '',
@@ -424,10 +506,12 @@ class WordPressDriver extends BaseDriver {
             
             if ($img.length === 0) return; // Skip if no image found
             
-            const imageUrl = $img.attr('src');
+            const imageUrl = $img.attr('src') || $img.attr('data-src') || null;
             const altText = $img.attr('alt') || '';
             
             if (!imageUrl) return; // Skip if no image URL
+
+            const attribution = $figure.find('.wp-element-caption').text() || '';
             
             // Find the next h2 element after this figure
             const $nextH2 = $figure.nextAll('h2.wp-block-heading').first();
@@ -449,10 +533,10 @@ class WordPressDriver extends BaseDriver {
             
             images.push({
                 url: imageUrl,
-                title: `${slideIndex}. ${title}`,
-                text: title,
-                description: this.stripHtml(slideContent),
-                attribution: altText || 'Image Provided by Source'
+                title: title,
+                text: slideContent,
+                description: altText || 'Image Provided by Source',
+                attribution: attribution
             });
             
             slideIndex++;

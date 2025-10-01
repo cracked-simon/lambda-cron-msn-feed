@@ -1,4 +1,7 @@
 const AWS = require('aws-sdk');
+const fs = require('fs').promises;
+const path = require('path');
+const { safeLog } = require('./sensitive-data');
 
 /**
  * Upload content to S3 bucket
@@ -6,17 +9,21 @@ const AWS = require('aws-sdk');
  * @param {string} fileName - File name/key in S3
  * @param {string} content - Content to upload
  * @param {string} region - AWS region
+ * @param {string} folderName - S3 folder name (optional)
  * @returns {Promise<Object>} S3 upload result
  */
-async function uploadToS3(bucketName, fileName, content, region = 'us-east-1') {
+async function uploadToS3(bucketName, fileName, content, region = 'us-east-1', folderName = '') {
     try {
         // Configure AWS SDK
         AWS.config.update({ region });
         const s3 = new AWS.S3();
         
+        // Construct the full S3 key with folder
+        const s3Key = folderName ? `${folderName}/${fileName}` : fileName;
+        
         const params = {
             Bucket: bucketName,
-            Key: fileName,
+            Key: s3Key,
             Body: content,
             ContentType: 'application/xml',
             CacheControl: 'max-age=3600', // Cache for 1 hour
@@ -26,7 +33,7 @@ async function uploadToS3(bucketName, fileName, content, region = 'us-east-1') {
             }
         };
         
-        console.log(`Uploading to S3: s3://${bucketName}/${fileName}`);
+        safeLog(console.log, `Uploading to S3: s3://${bucketName}/${s3Key}`);
         const result = await s3.upload(params).promise();
         
         return result;
@@ -34,6 +41,35 @@ async function uploadToS3(bucketName, fileName, content, region = 'us-east-1') {
     } catch (error) {
         console.error('Error uploading to S3:', error);
         throw new Error(`S3 upload failed: ${error.message}`);
+    }
+}
+
+/**
+ * Save content to local file
+ * @param {string} fileName - File name
+ * @param {string} content - Content to save
+ * @returns {Promise<Object>} File save result
+ */
+async function saveToFile(fileName, content) {
+    try {
+        // Ensure feed directory exists relative to project root (where index.js is located)
+        const projectRoot = path.dirname(require.main.filename);
+        const feedDir = path.join(projectRoot, 'feed');
+        await fs.mkdir(feedDir, { recursive: true });
+        
+        const filePath = path.join(feedDir, fileName);
+        
+        safeLog(console.log, `Saving to file: ${filePath}`);
+        await fs.writeFile(filePath, content, 'utf8');
+        
+        return {
+            Location: filePath,
+            message: 'File saved successfully'
+        };
+        
+    } catch (error) {
+        console.error('Error saving to file:', error);
+        throw new Error(`File save failed: ${error.message}`);
     }
 }
 
@@ -61,7 +97,7 @@ async function invalidateCloudFront(distributionId, path, region = 'us-east-1') 
             }
         };
         
-        console.log(`Invalidating CloudFront: ${distributionId} - ${path}`);
+        safeLog(console.log, `Invalidating CloudFront: ${distributionId} - ${path}`);
         const result = await cloudfront.createInvalidation(params).promise();
         
         return result;
@@ -85,7 +121,7 @@ async function testAWSCredentials(bucketName, region = 'us-east-1') {
         
         // Try to list objects in the bucket
         await s3.headBucket({ Bucket: bucketName }).promise();
-        console.log(`AWS credentials valid - can access bucket: ${bucketName}`);
+        safeLog(console.log, `AWS credentials valid - can access bucket: ${bucketName}`);
         return true;
         
     } catch (error) {
@@ -96,6 +132,7 @@ async function testAWSCredentials(bucketName, region = 'us-east-1') {
 
 module.exports = {
     uploadToS3,
+    saveToFile,
     invalidateCloudFront,
     testAWSCredentials
 };

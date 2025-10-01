@@ -18,6 +18,9 @@ lambda-cron-msn-feed.zip
 logs
 *.log
 
+# Generated feed files
+feed/
+
 # Runtime data
 pids
 *.pid

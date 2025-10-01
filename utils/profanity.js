@@ -75,9 +75,24 @@ function filterProfanity(items, profanityList) {
         const description = item.description || '';
         const content = item.content || '';
         
+        // For slideshows, also check image content
+        let imageContent = '';
+        if (item.isSlideShow && item.images && Array.isArray(item.images)) {
+            imageContent = item.images.map(image => {
+                return [
+                    image.title || '',
+                    image.text || '',
+                    image.description || '',
+                    image.attribution || '',
+                    image.caption || ''
+                ].join(' ');
+            }).join(' ');
+        }
+        
         const hasProfanity = containsProfanity(title, profanityList) ||
                            containsProfanity(description, profanityList) ||
-                           containsProfanity(content, profanityList);
+                           containsProfanity(content, profanityList) ||
+                           containsProfanity(imageContent, profanityList);
         
         if (hasProfanity) {
             console.log(`Filtered out item due to profanity: "${title}"`);

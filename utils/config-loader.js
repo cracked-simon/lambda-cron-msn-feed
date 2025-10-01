@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const { safeLog } = require('./sensitive-data');
 
 /**
  * Configuration loader that can load from files and override environment variables
@@ -22,12 +23,12 @@ class ConfigLoader {
             
             // If config file is provided, load and merge it
             if (configFilePath) {
-                console.log(`Loading configuration from: ${configFilePath}`);
+                safeLog(console.log, `Loading configuration from: ${configFilePath}`);
                 this.overrideConfig = await this.loadConfigFile(configFilePath);
                 
                 // Merge config file overrides with base config
                 const mergedConfig = this.mergeConfigs(this.baseConfig, this.overrideConfig);
-                console.log(`Configuration merged from file: ${configFilePath}`);
+                safeLog(console.log, `Configuration merged from file: ${configFilePath}`);
                 
                 return mergedConfig;
             }
@@ -85,9 +86,13 @@ class ConfigLoader {
             FEED_ITEMS_PER_RUN: parseInt(process.env.FEED_ITEMS_PER_RUN) || 5,
             FEED_MAX_TOTAL_ITEMS: parseInt(process.env.FEED_MAX_TOTAL_ITEMS) || 20,
             
+            // Storage Configuration
+            STORAGE: process.env.STORAGE || 'file', // 'file' or 's3'
+            
             // AWS Configuration
             AWS_REGION: process.env.AWS_REGION || 'us-east-1',
             S3_BUCKET_NAME: process.env.S3_BUCKET_NAME || process.env.AWS_S3_BUCKET,
+            S3_FOLDER_NAME: process.env.S3_FOLDER_NAME || 'feeds',
             CLOUDFRONT_DISTRIBUTION_ID: process.env.CLOUDFRONT_DISTRIBUTION_ID || process.env.AWS_CLOUDFRONT_DISTRO,
 
             // Profanity Filter
@@ -112,7 +117,7 @@ class ConfigLoader {
             const fileContent = await fs.readFile(fullPath, 'utf8');
             const config = JSON.parse(fileContent);
             
-            console.log(`Loaded config file: ${fullPath}`);
+            safeLog(console.log, `Loaded config file: ${fullPath}`);
             return config;
             
         } catch (error) {
@@ -135,9 +140,12 @@ class ConfigLoader {
     mergeConfigs(baseConfig, overrideConfig) {
         const merged = { ...baseConfig };
         
+        // Handle config files with 'overrides' object
+        const configOverrides = overrideConfig.overrides || overrideConfig;
+        
         // Deep merge the configurations
-        for (const [key, value] of Object.entries(overrideConfig)) {
-            if (value !== null && value !== undefined && value !== '') {
+        for (const [key, value] of Object.entries(configOverrides)) {
+            if (value !== null && value !== undefined) {
                 merged[key] = value;
                 console.log(`Config override: ${key} = ${typeof value === 'object' ? JSON.stringify(value) : value}`);
             }

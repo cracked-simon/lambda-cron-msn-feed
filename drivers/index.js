@@ -1,51 +1,6 @@
 const wordpressDriver = require('./wordpress');
 
 /**
- * Base Driver Interface
- * All drivers must implement these methods
- */
-class BaseDriver {
-    constructor() {
-        this.name = 'BaseDriver';
-        this.supportedFormats = [];
-    }
-    
-    /**
-     * Ingest content from the source (lightweight, fast)
-     * @param {Object} config - Configuration object
-     * @param {Object} db - Database manager instance
-     * @returns {Promise<Object>} Object with ingested count and new count
-     */
-    async ingest(config, db) {
-        throw new Error(`ingest() method not implemented in ${this.name}`);
-    }
-    
-    /**
-     * Fetch full content for a specific item
-     * @param {string} contentHash - Content hash for the item
-     * @param {Object} config - Configuration object
-     * @param {Object} db - Database manager instance
-     * @returns {Promise<Object>} Full content object
-     */
-    async fetchContent(contentHash, config, db) {
-        throw new Error(`fetchContent() method not implemented in ${this.name}`);
-    }
-    
-    /**
-     * Generate hash for content tracking
-     * @param {string} guid - Unique identifier
-     * @returns {string} SHA256 hash
-     */
-    generateHash(guid) {
-        const crypto = require('crypto');
-        return crypto
-            .createHash('sha256')
-            .update(`${this.name}:${guid}`)
-            .digest('hex');
-    }
-}
-
-/**
  * Registry of available feed drivers
  */
 const drivers = {
@@ -78,7 +33,6 @@ function getAvailableFeedTypes() {
 }
 
 module.exports = {
-    BaseDriver,
     getFeedDriver,
     getAvailableFeedTypes
 };

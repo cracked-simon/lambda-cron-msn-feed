@@ -1,3 +1,5 @@
+const { safeLog } = require('./sensitive-data');
+
 /**
  * Database utilities for content storage and tracking
  * MySQL-only implementation
@@ -30,7 +32,7 @@ class DatabaseManager {
         });
         
         await this.ensureTables();
-        console.log('Connected to MySQL');
+        safeLog(console.log, 'Connected to MySQL');
         return this.client;
     }
     
@@ -91,13 +93,13 @@ class DatabaseManager {
     }
     
     /**
-     * Check if source is new (no items exist for this source)
+     * Check if source is new (no items exist for this source + platform + feed_type combination)
      */
     async isNewSource(config) {
         const [rows] = await this.client.execute(`
             SELECT COUNT(*) as count FROM ingested_content 
-            WHERE source = ?
-        `, [config.EXTERNAL_FEED_SOURCE]);
+            WHERE source = ? AND platform = ? AND feed_type = ?
+        `, [config.EXTERNAL_FEED_SOURCE, config.EXTERNAL_FEED_PLATFORM, config.EXTERNAL_FEED_TYPE]);
         
         return rows[0].count === 0;
     }
@@ -142,14 +144,15 @@ class DatabaseManager {
         };
         
         await this.client.execute(`
-            INSERT INTO ingested_content (content_hash, source, guid, platform, feed_type, metadata, full_content)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ingested_content (content_hash, source, guid, platform, feed_type, status, metadata, full_content)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             itemData.content_hash,
             itemData.source,
             itemData.guid,
             itemData.platform,
             itemData.feed_type,
+            itemData.status,
             JSON.stringify(itemData.metadata),
             itemData.full_content ? JSON.stringify(itemData.full_content) : null
         ]);
@@ -159,12 +162,15 @@ class DatabaseManager {
      * Get pending items for feed generation
      */
     async getPendingItems(limit, config) {
+        const limitInt = parseInt(limit, 10);
+
         const [rows] = await this.client.execute(`
             SELECT * FROM ingested_content 
-            WHERE source = ? AND status = 'pending'
+            WHERE source = ? AND status = 'pending' AND feed_type = ?
             ORDER BY ingested_at ASC
-            LIMIT ?
-        `, [config.EXTERNAL_FEED_SOURCE, limit]);
+            LIMIT ${limitInt}
+        `, [config.EXTERNAL_FEED_SOURCE, config.EXTERNAL_FEED_TYPE]);
+
         return rows;
     }
     
@@ -172,32 +178,54 @@ class DatabaseManager {
      * Update item status
      */
     async updateItemStatus(contentHash, source, status, skipReason = null, processedData = null) {
-        const mysqlUpdate = status === 'published' 
-            ? 'published_at = NOW()'
-            : status === 'skipped' 
-            ? 'skipped_at = NOW(), skip_reason = ?'
-            : '';
-            
-        await this.client.execute(`
-            UPDATE ingested_content 
-            SET status = ?, ${mysqlUpdate}${processedData ? ', processed_data = ?' : ''}
-            WHERE content_hash = ? AND source = ?
-        `, processedData 
-            ? [status, skipReason, JSON.stringify(processedData), contentHash, source]
-            : [status, skipReason || contentHash, contentHash, source]
-        );
+        let query = 'UPDATE ingested_content SET status = ?';
+        let params = [status];
+        
+        if (status === 'published') {
+            query += ', published_at = NOW()';
+        } else if (status === 'skipped') {
+            query += ', skipped_at = NOW(), skip_reason = ?';
+            params.push(skipReason);
+        }
+        
+        if (processedData) {
+            query += ', processed_data = ?';
+            params.push(JSON.stringify(processedData));
+        }
+        
+        query += ' WHERE content_hash = ? AND source = ?';
+        params.push(contentHash, source);
+        
+        await this.client.execute(query, params);
     }
     
     /**
      * Get published items for feed (with moving window logic)
+     * @param {number} maxItems - Maximum number of items to return
+     * @param {Object} config - Configuration object
+     * @param {Array<string>} excludeContentHashes - Array of content hashes to exclude from results
      */
-    async getPublishedItems(maxItems, config) {
-        const [rows] = await this.client.execute(`
+    async getPublishedItems(maxItems, config, excludeContentHashes = []) {
+        const maxItemsInt = parseInt(maxItems, 10);
+        
+        let query = `
             SELECT * FROM ingested_content 
-            WHERE source = ? AND status = 'published'
-            ORDER BY published_at ASC
-            LIMIT ?
-        `, [config.EXTERNAL_FEED_SOURCE, maxItems]);
+            WHERE source = ? AND status = 'published' AND feed_type = ?
+        `;
+        let params = [config.EXTERNAL_FEED_SOURCE, config.EXTERNAL_FEED_TYPE];
+
+        safeLog(console.log, 'Exclude content hashes:', excludeContentHashes);
+        
+        // Add exclusion clause if content hashes are provided
+        if (excludeContentHashes && excludeContentHashes.length > 0) {
+            const placeholders = excludeContentHashes.map(() => '?').join(',');
+            query += ` AND content_hash NOT IN (${placeholders})`;
+            params.push(...excludeContentHashes);
+        }
+        
+        query += ` ORDER BY published_at ASC LIMIT ${maxItemsInt}`;
+        
+        const [rows] = await this.client.execute(query, params);
         return rows;
     }
     

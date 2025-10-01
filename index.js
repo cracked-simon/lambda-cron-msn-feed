@@ -4,10 +4,11 @@ const AWS = require('aws-sdk');
 const dotenv = require('dotenv');
 const ConfigLoader = require('./utils/config-loader');
 const { getProfanityList, filterProfanity } = require('./utils/profanity');
-const { uploadToS3, invalidateCloudFront, testAWSCredentials } = require('./utils/aws');
+const { uploadToS3, saveToFile, invalidateCloudFront, testAWSCredentials } = require('./utils/aws');
 const MSNConverter = require('./utils/msn-converter');
 const DatabaseManager = require('./utils/database');
 const { getFeedDriver, getAvailableFeedTypes } = require('./drivers');
+const { safeLog } = require('./utils/sensitive-data');
 const logger = require('./utils/logger');
 
 /**
@@ -35,7 +36,7 @@ async function runFeedConverter(configFile) {
             throw new Error(`Missing required configuration variables: ${missingVars.join(', ')}`);
         }
         
-        logger.info(`Processing ${config.EXTERNAL_FEED_TYPE} ${config.EXTERNAL_FEED_PLATFORM} feed from: ${config.EXTERNAL_FEED_URL}`);
+        safeLog(logger.info, `Processing ${config.EXTERNAL_FEED_TYPE} ${config.EXTERNAL_FEED_PLATFORM} feed from: ${config.EXTERNAL_FEED_URL}`);
         
         // Initialize database connection
         logger.info('📊 Connecting to database...');
@@ -48,6 +49,8 @@ async function runFeedConverter(configFile) {
             throw new Error(`Unsupported feed platform: ${config.EXTERNAL_FEED_PLATFORM}`);
         }
 
+        const isNewSource = await db.isNewSource(config);
+
         // PHASE 1: INGESTING
         logger.info('\n🔄 PHASE 1: INGESTING NEW CONTENT');
         logger.info('=====================================');
@@ -59,19 +62,30 @@ async function runFeedConverter(configFile) {
         logger.info('\n🔄 PHASE 2: GENERATING FEED');
         logger.info('============================');
 
-        // Get profanity list
-        logger.info('Loading profanity list...');
-        const profanityList = await getProfanityList(config.PROFANITY_LIST_URL);
-        logger.info(`Loaded ${profanityList.length} profanity terms`);
+        // Get profanity list (if profanity filter is enabled)
+        const profanityFilterEnabled = config.PROFANITY_FILTER_ENABLED === 'true' || config.PROFANITY_FILTER_ENABLED === true;
+        let profanityList = [];
+        
+        if (profanityFilterEnabled) {
+            logger.info('Loading profanity list...');
+            profanityList = await getProfanityList(config.PROFANITY_LIST_URL);
+            logger.info(`Loaded ${profanityList.length} profanity terms`);
+        } else {
+            logger.info('Profanity filter is disabled');
+        }
 
-        // Get pending items for processing
-        logger.info(`Getting ${config.FEED_ITEMS_PER_RUN} pending items for processing...`);
-        const pendingItems = await db.getPendingItems(config.FEED_ITEMS_PER_RUN, config);
+        // Determine if this is a new source and adjust processing limit accordingly
+        const processingLimit = isNewSource ? 20 : config.FEED_ITEMS_PER_RUN;
+        
+        logger.info(`Source status: ${isNewSource ? 'NEW' : 'EXISTING'}`);
+        logger.info(`Getting ${processingLimit} pending items for processing...`);
+        const pendingItems = await db.getPendingItems(processingLimit, config);
         logger.info(`Found ${pendingItems.length} pending items`);
 
         let processedCount = 0;
         let skippedCount = 0;
         const feedItems = [];
+        const processedContentHashes = [];
 
         // Process each pending item
         for (const item of pendingItems) {
@@ -84,12 +98,18 @@ async function runFeedConverter(configFile) {
                 // Normalize the content
                 const normalizedPost = driver.normalizePost(fullContent, config.EXTERNAL_FEED_TYPE);
 
-                // Apply profanity filter
-                const isClean = filterProfanity([normalizedPost], profanityList).length === 0;
+                // Apply profanity filter (if enabled)
+                const profanityFilterEnabled = config.PROFANITY_FILTER_ENABLED === 'true' || config.PROFANITY_FILTER_ENABLED === true;
+                let isClean = true;
+                
+                if (profanityFilterEnabled) {
+                    isClean = filterProfanity([normalizedPost], profanityList).length === 0;
+                }
 
                 if (isClean) {
                     // Content is clean - add to feed
                     feedItems.push(normalizedPost);
+                    processedContentHashes.push(item.content_hash);
                     await db.updateItemStatus(item.content_hash, item.source, 'published', null, normalizedPost);
                     processedCount++;
                     logger.info(`✅ Published: ${normalizedPost.title}`);
@@ -112,12 +132,13 @@ async function runFeedConverter(configFile) {
         logger.info(`   Skipped: ${skippedCount} items`);
         logger.info(`   Feed items: ${feedItems.length} items`);
 
-        // Get existing published items to maintain feed window
-        const existingPublishedItems = await db.getPublishedItems(1000, config); // Get more than needed
+        // Get existing published items to maintain feed window (excluding items just processed)
+        const existingPublishedItems = await db.getPublishedItems(20, config, processedContentHashes);
         logger.info(`Existing published items in database: ${existingPublishedItems.length}`);
 
-        // Combine new and existing items
-        const allFeedItems = [...feedItems, ...existingPublishedItems.map(item => item.processed_data)];
+        // Combine new and existing items (no duplicates since DB excludes them)
+        const existingItems = existingPublishedItems.map(item => item.processed_data);
+        const allFeedItems = [...feedItems, ...existingItems];
 
         // Apply moving window logic - keep only the most recent items for the feed
         let finalFeedItems = allFeedItems;
@@ -142,25 +163,44 @@ async function runFeedConverter(configFile) {
         };
         const msnFeed = MSNConverter.convertToMSN(config.EXTERNAL_FEED_URL, finalFeedItems, msnConfig);
 
-        // Upload to S3
-        logger.info('Uploading to S3...');
-        const s3Result = await uploadToS3(
-            config.S3_BUCKET_NAME,
-            config.FEED_FILE_NAME,
-            msnFeed,
-            config.AWS_REGION
-        );
-        logger.info(`Uploaded to S3: ${s3Result.Location}`);
-
-        // Invalidate CloudFront
-        if (config.CLOUDFRONT_DISTRIBUTION_ID) {
-            logger.info('Invalidating CloudFront...');
-            const invalidationResult = await invalidateCloudFront(
-                config.CLOUDFRONT_DISTRIBUTION_ID,
-                `/${config.FEED_FILE_NAME}`,
-                config.AWS_REGION
+        // Save feed based on storage configuration
+        let storageResult;
+        let cloudFrontInvalidated = false;
+        
+        if (config.STORAGE === 'file') {
+            logger.info('\n🔄 SAVING TO LOCAL FILE');
+            logger.info('========================');
+            
+            storageResult = await saveToFile(config.FEED_FILE_NAME, msnFeed);
+            logger.info(`✅ Saved to file: ${storageResult.Location}`);
+            
+        } else {
+            logger.info('\n🔄 UPLOADING TO S3');
+            logger.info('===================');
+            
+            storageResult = await uploadToS3(
+                config.S3_BUCKET_NAME,
+                config.FEED_FILE_NAME,
+                msnFeed,
+                config.AWS_REGION,
+                config.S3_FOLDER_NAME
             );
-            logger.info(`CloudFront invalidation: ${invalidationResult.Invalidation.Id}`);
+            logger.info(`✅ Uploaded to S3: ${storageResult.Location}`);
+
+            // Invalidate CloudFront (only for S3 storage)
+            if (config.CLOUDFRONT_DISTRIBUTION_ID) {
+                logger.info('Invalidating CloudFront...');
+                const cloudFrontPath = config.S3_FOLDER_NAME ? 
+                    `/${config.S3_FOLDER_NAME}/${config.FEED_FILE_NAME}` : 
+                    `/${config.FEED_FILE_NAME}`;
+                const invalidationResult = await invalidateCloudFront(
+                    config.CLOUDFRONT_DISTRIBUTION_ID,
+                    cloudFrontPath,
+                    config.AWS_REGION
+                );
+                logger.info(`✅ CloudFront invalidation: ${invalidationResult.Invalidation.Id}`);
+                cloudFrontInvalidated = true;
+            }
         }
 
         const endTime = new Date();
@@ -176,8 +216,9 @@ async function runFeedConverter(configFile) {
             processed: processedCount,
             skipped: skippedCount,
             feedItems: finalFeedItems.length,
-            s3Location: s3Result.Location,
-            cloudFrontInvalidated: !!config.CLOUDFRONT_DISTRIBUTION_ID,
+            storageLocation: storageResult.Location,
+            storageType: config.STORAGE,
+            cloudFrontInvalidated: cloudFrontInvalidated,
             duration: `${duration}s`
         };
 
