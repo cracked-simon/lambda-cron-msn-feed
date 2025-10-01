@@ -102,9 +102,9 @@ class MSNConverter {
      */
     static cleanHtml(html) {
         if (!html) return '';
-        html = html.replace(/<\/?html>/, '')
-                    .replace(/<\/?head>/, '')
-                    .replace(/<\/?body>/, '');
+        html = html.replace(/<\/?html>/g, '')
+                    .replace(/<\/?head>/g, '')
+                    .replace(/<\/?body>/g, '');
         
         return html;
     }
