@@ -36,7 +36,7 @@ async function runFeedConverter(configFile) {
             throw new Error(`Missing required configuration variables: ${missingVars.join(', ')}`);
         }
         
-        safeLog(logger.info, `Processing ${config.EXTERNAL_FEED_TYPE} ${config.EXTERNAL_FEED_PLATFORM} feed from: ${config.EXTERNAL_FEED_URL}`);
+        safeLog((...args) => logger.info(...args), `Processing ${config.EXTERNAL_FEED_TYPE} ${config.EXTERNAL_FEED_PLATFORM} feed from: ${config.EXTERNAL_FEED_URL}`);
         
         // Initialize database connection
         logger.info('📊 Connecting to database...');
