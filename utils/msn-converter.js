@@ -87,8 +87,8 @@ class MSNConverter {
             ${isSlideShow && post.images ? `<media:group>
                 ${post.images.map((image, index) => `<media:content url="${image.url}" type="image/jpeg" medium="image">
                     <media:title><![CDATA[${image.title || post.title}]]></media:title>
-                    ${image.text ? `<media:text><![CDATA[${image.text}]]></media:text>` : ''}
-                    ${image.description ? `<media:description><![CDATA[${image.description}]]></media:description>` : ''}
+                    ${image.text ? `<media:description><![CDATA[${image.text}]]></media:description>` : ''}
+                    ${image.description ? `<media:text><![CDATA[${image.description}]]></media:text>` : ''}
                     ${image.attribution || image.caption ? `<media:credit><![CDATA[${(image.attribution || '') + ' ' + (image.caption || '')}]]></media:credit>` : '<media:credit><![CDATA[Image Provided by Source]]></media:credit>'}
                 </media:content>`).join('\n                ')}
             </media:group>` : ''}
