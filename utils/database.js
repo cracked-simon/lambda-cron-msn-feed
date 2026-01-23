@@ -223,7 +223,7 @@ class DatabaseManager {
             params.push(...excludeContentHashes);
         }
         
-        query += ` ORDER BY published_at DESC LIMIT ${maxItemsInt}`;
+        query += ` ORDER BY published_at ASC LIMIT ${maxItemsInt}`;
         
         const [rows] = await this.client.execute(query, params);
         return rows;
