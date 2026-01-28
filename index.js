@@ -3,7 +3,7 @@
 const AWS = require('aws-sdk');
 const dotenv = require('dotenv');
 const ConfigLoader = require('./utils/config-loader');
-const { getProfanityList, filterProfanity } = require('./utils/profanity');
+const { getProfanityList, filterProfanity, findProfanityWords, containsProfanity } = require('./utils/profanity');
 const { uploadToS3, saveToFile, invalidateCloudFront, testAWSCredentials } = require('./utils/aws');
 const MSNConverter = require('./utils/msn-converter');
 const DatabaseManager = require('./utils/database');
@@ -101,9 +101,44 @@ async function runFeedConverter(configFile) {
                 // Apply profanity filter (if enabled)
                 const profanityFilterEnabled = config.PROFANITY_FILTER_ENABLED === 'true' || config.PROFANITY_FILTER_ENABLED === true;
                 let isClean = true;
+                let flaggedWords = [];
                 
                 if (profanityFilterEnabled) {
-                    isClean = filterProfanity([normalizedPost], profanityList).length === 0;
+                    const title = normalizedPost.title || '';
+                    const description = normalizedPost.description || '';
+                    const content = normalizedPost.content || '';
+                    
+                    // For slideshows, also check image content
+                    let imageContent = '';
+                    if (normalizedPost.isSlideShow && normalizedPost.images && Array.isArray(normalizedPost.images)) {
+                        imageContent = normalizedPost.images.map(image => {
+                            return [
+                                image.title || '',
+                                image.text || '',
+                                image.description || '',
+                                image.attribution || '',
+                                image.caption || ''
+                            ].join(' ');
+                        }).join(' ');
+                    }
+                    
+                    // Check for profanity in all fields
+                    const hasProfanity = containsProfanity(title, profanityList) ||
+                                       containsProfanity(description, profanityList) ||
+                                       containsProfanity(content, profanityList) ||
+                                       containsProfanity(imageContent, profanityList);
+                    
+                    if (hasProfanity) {
+                        isClean = false;
+                        // Find which specific words were flagged
+                        const titleWords = findProfanityWords(title, profanityList);
+                        const descWords = findProfanityWords(description, profanityList);
+                        const contentWords = findProfanityWords(content, profanityList);
+                        const imageWords = findProfanityWords(imageContent, profanityList);
+                        
+                        // Combine all flagged words and remove duplicates
+                        flaggedWords = [...new Set([...titleWords, ...descWords, ...contentWords, ...imageWords])];
+                    }
                 }
 
                 if (isClean) {
@@ -117,7 +152,8 @@ async function runFeedConverter(configFile) {
                     // Content contains profanity - skip
                     await db.updateItemStatus(item.content_hash, item.source, 'skipped', 'profanity');
                     skippedCount++;
-                    logger.info(`❌ Skipped (profanity): ${normalizedPost.title}`);
+                    const wordsList = flaggedWords.length > 0 ? ` (flagged: ${flaggedWords.join(', ')})` : '';
+                    logger.info(`❌ Skipped (profanity): ${normalizedPost.title}${wordsList}`);
                 }
 
             } catch (error) {

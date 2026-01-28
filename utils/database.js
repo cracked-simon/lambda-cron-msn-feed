@@ -108,10 +108,15 @@ class DatabaseManager {
      * Insert item directly (used by drivers during ingestion)
      */
     async insertItemDirect(item, config) {
-        const exists = await this.itemExists(item.content_hash, config.EXTERNAL_FEED_SOURCE);
-        if (!exists) {
+        const dbContent = await this.getItemByHash(item.content_hash, config.EXTERNAL_FEED_SOURCE);
+
+        if (!dbContent) {
             await this.insertItem(item, config);
             return true; // Item was inserted
+        } else {
+            if (item.item_modified_at != dbContent.item_modified_at) {
+                await this.updateItem(item, dbContent.item_modified_at == null ? dbContent.status : 'pending');
+            }
         }
         return false; // Item already exists
     }
@@ -139,13 +144,26 @@ class DatabaseManager {
             feed_type: config.EXTERNAL_FEED_TYPE,
             status: 'pending',
             metadata: item.metadata,
-            full_content: item.fullContent || null,
-            processed_data: null
+            full_content: item.full_content || null,
+            processed_data: null,
+            item_published_at: item.item_published_at,
+            item_modified_at: item.item_modified_at
         };
         
         await this.client.execute(`
-            INSERT INTO ingested_content (content_hash, source, guid, platform, feed_type, status, metadata, full_content)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ingested_content (
+                content_hash, 
+                source, 
+                guid, 
+                platform, 
+                feed_type, 
+                status, 
+                metadata, 
+                full_content,
+                item_published_at,
+                item_modified_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             itemData.content_hash,
             itemData.source,
@@ -154,9 +172,37 @@ class DatabaseManager {
             itemData.feed_type,
             itemData.status,
             JSON.stringify(itemData.metadata),
-            itemData.full_content ? JSON.stringify(itemData.full_content) : null
+            itemData.full_content ? JSON.stringify(itemData.full_content) : null,
+            itemData.item_published_at,
+            itemData.item_modified_at
         ]);
     }
+
+    /**
+     * Updating an existing item which always puts it into pending
+     */
+    async updateItem(item, status) {  
+        await this.client.execute(`
+            UPDATE 
+                ingested_content 
+            SET
+                metadata = ?,
+                full_content = ?,
+                item_published_at = ?,
+                item_modified_at = ?,
+                status = ?
+            WHERE
+                content_hash = ?
+        `, [
+            JSON.stringify(item.metadata),
+            item.full_content ? JSON.stringify(item.full_content) : null,
+            item.item_published_at,
+            item.item_modified_at,     
+            status,       
+            item.content_hash
+        ]);
+    }
+        
     
     /**
      * Get pending items for feed generation
@@ -223,7 +269,7 @@ class DatabaseManager {
             params.push(...excludeContentHashes);
         }
         
-        query += ` ORDER BY published_at ASC LIMIT ${maxItemsInt}`;
+        query += ` ORDER BY item_published_at DESC LIMIT ${maxItemsInt}`;
         
         const [rows] = await this.client.execute(query, params);
         return rows;

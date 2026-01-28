@@ -13,7 +13,7 @@
     "SITE_DESCRIPTION": "Den of Geek delivers the latest slideshows and galleries on movies, TV, games, books, and comics.",
     "SITE_LANGUAGE": "en-us",
     "SITE_COPYRIGHT": "Den of Geek",
-    "FEED_ITEMS_PER_RUN": 2,
+    "FEED_ITEMS_PER_RUN": 20,
     "FEED_MAX_TOTAL_ITEMS": 40,
     "PROFANITY_FILTER_ENABLED": true
   }

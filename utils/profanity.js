@@ -48,6 +48,31 @@ function containsProfanity(text, profanityList) {
 }
 
 /**
+ * Find all profanity words in text
+ * @param {string} text - Text to check
+ * @param {Array<string>} profanityList - List of profanity terms
+ * @returns {Array<string>} Array of matched profanity terms
+ */
+function findProfanityWords(text, profanityList) {
+    if (!text || !profanityList || profanityList.length === 0) {
+        return [];
+    }
+    
+    const lowerText = text.toLowerCase();
+    const matchedTerms = [];
+    
+    profanityList.forEach(term => {
+        // Check for exact word matches (not substring matches)
+        const regex = new RegExp(`\\b${escapeRegExp(term)}\\b`, 'i');
+        if (regex.test(lowerText)) {
+            matchedTerms.push(term);
+        }
+    });
+    
+    return matchedTerms;
+}
+
+/**
  * Escape special regex characters
  * @param {string} string - String to escape
  * @returns {string} Escaped string
@@ -110,5 +135,6 @@ function filterProfanity(items, profanityList) {
 module.exports = {
     getProfanityList,
     containsProfanity,
+    findProfanityWords,
     filterProfanity
 };
