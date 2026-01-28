@@ -187,7 +187,7 @@ async function runFeedConverter(configFile) {
         logger.info(`Existing published items in database: ${existingPublishedItems.length}`);
 
         // Combine new and existing items (no duplicates since DB excludes them)
-        const existingItems = existingPublishedItems.map(item => item.processed_data);
+        const existingItems = existingPublishedItems.map(item => driver.normalizePost(item.full_content, config.EXTERNAL_FEED_TYPE));
         const allFeedItems = [...feedItems, ...existingItems];
 
         // Apply moving window logic - keep only the most recent items for the feed
@@ -211,6 +211,8 @@ async function runFeedConverter(configFile) {
             language: config.SITE_LANGUAGE || 'en-us',
             copyright: config.SITE_COPYRIGHT || ''
         };
+
+        // console.log(finalFeedItems);
         const msnFeed = MSNConverter.convertToMSN(config.EXTERNAL_FEED_URL, finalFeedItems, msnConfig);
 
         // Save feed based on storage configuration

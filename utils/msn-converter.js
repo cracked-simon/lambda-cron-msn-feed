@@ -53,8 +53,15 @@ class MSNConverter {
     static generatePostXML(post) {
         const pubDate = new Date(post.pubDate).toUTCString().replace('GMT', '+0000');
         const isSlideShow = post.isSlideShow || false;
+
+        let thumbnail = post.featuredImage;
+        if (typeof post.featuredImage == 'object' && typeof post.thumbnail == 'object') {
+            thumbnail = post.featuredImage.url || post.thumbnail.url;
+        }
+
+        // console.log(post.guid, thumbnail);
         
-        return `<item>
+        let msnPost = `<item>
             <guid>${post.guid || post.link}</guid>
             
             <title><![CDATA[${post.title}]]></title>
@@ -70,29 +77,45 @@ class MSNConverter {
 
             ${isSlideShow ? `<description><![CDATA[${this.cleanDescription(post.description)}]]></description>` : `<description><![CDATA[${this.cleanDescription(post.description)}]]></description>`}
 
-            ${post.thumbnail ? `<media:content url="${post.thumbnail.url}" type="image/jpeg" medium="image">
-                <media:text><![CDATA[${post.thumbnail.alt || post.title}]]></media:text>
-                ${post.thumbnail.attribution ? `<media:description><![CDATA[${this.stripTags(post.thumbnail.attribution)}]]></media:description>` : ''}
-            </media:content>` : ''}
+            <media:content url="${thumbnail}" type="image/jpeg" medium="image">
+                <media:text><![CDATA[${post.title}]]></media:text>
+            </media:content>`;
 
-            ${!isSlideShow && post.content ? `<content:encoded><![CDATA[
-                ${post.featuredImage ? `<figure>
-                    <img src="${post.featuredImage.url}" alt="${post.featuredImage.alt || post.title}" />
-                    ${post.featuredImage.attribution ? `<figcaption>${post.featuredImage.attribution}</figcaption>` : ''}
-                </figure>` : ''}
+        if (!isSlideShow && post.content) {
+            msnPost += `<content:encoded><![CDATA[
+                <figure>
+                    <img src="${thumbnail}" alt="${post.title}" />
+                </figure>
                 
                 ${this.cleanHtml(post.content)}
-            ]]></content:encoded>` : ''}
+            ]]></content:encoded>`;
+        }
 
-            ${isSlideShow && post.images ? `<media:group>
-                ${post.images.map((image, index) => `<media:content url="${image.url}" type="image/jpeg" medium="image">
-                    <media:title><![CDATA[${image.title || post.title}]]></media:title>
-                    ${image.text ? `<media:description><![CDATA[${image.text}]]></media:description>` : ''}
-                    ${image.description ? `<media:text><![CDATA[${image.description}]]></media:text>` : ''}
-                    ${image.attribution || image.caption ? `<media:credit><![CDATA[${(image.attribution || '') + ' ' + (image.caption || '')}]]></media:credit>` : '<media:credit><![CDATA[Image Provided by Source]]></media:credit>'}
-                </media:content>`).join('\n                ')}
-            </media:group>` : ''}
-        </item>`;
+        if (isSlideShow && post.images) {
+            msnPost += '<media:group>';
+
+            msnPost += `<media:content url="${thumbnail}" type="image/jpeg" medium="image">
+                <media:title><![CDATA[${post.title}]]></media:title>
+                ${post.excerpt ? `<media:text><![CDATA[${post.excerpt}]]</media:text>
+                <media:description><![CDATA[${post.excerpt}]]</media:description>` : ''}
+            </media:content>`;
+
+            post.images.map((image, index) => {
+                msnPost += `<media:content url="${image.url}" type="image/jpeg" medium="image">
+                                <media:title><![CDATA[${image.title || post.title}]]></media:title>
+                                ${image.text ? `<media:description><![CDATA[${image.text}]]></media:description>` : ''}
+                                ${image.description ? `<media:text><![CDATA[${image.description}]]></media:text>` : ''}
+                                ${image.attribution || image.caption ? `<media:credit><![CDATA[${(image.attribution || '') + ' ' + (image.caption || '')}]]></media:credit>` : '<media:credit><![CDATA[Image Provided by Source]]></media:credit>'}
+                            </media:content>
+                `;
+            })
+
+            msnPost += '</media:group>';
+        }
+
+        msnPost += '</item>';
+
+        return msnPost;
     }
     
     /**

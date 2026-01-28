@@ -61,8 +61,8 @@ class WordPressDriver {
             author: post.author,
             categories: post.categories,
             isSlideShow: parsedContent.isSlideShow,
-            thumbnail: this.thumbnail,
-            featuredImage: this.thumbnail,
+            thumbnail: post.thumbnail,
+            featuredImage: post.thumbnail,
             images: parsedContent.images
         };
     }
@@ -281,7 +281,7 @@ class WordPressDriver {
             
             // Build the API URL with pagination
             let queryParams = {
-                // 'include': '985880', // debug single post
+                // 'include': '985945', // debug single post
                 'per_page': this.postsPerPage,
                 'page': page
             }
