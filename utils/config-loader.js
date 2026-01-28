@@ -99,7 +99,11 @@ class ConfigLoader {
             CLOUDFRONT_DISTRIBUTION_ID: process.env.CLOUDFRONT_DISTRIBUTION_ID || process.env.AWS_CLOUDFRONT_DISTRO,
 
             // Profanity Filter
-            PROFANITY_LIST_URL: process.env.PROFANITY_LIST_URL || 'https://raw.githubusercontent.com/cracked-simon/literally-profanity/refs/heads/main/final-list.json'
+            PROFANITY_LIST_URL: process.env.PROFANITY_LIST_URL || 'https://raw.githubusercontent.com/cracked-simon/literally-profanity/refs/heads/main/final-list.json',
+            PROFANITY_FILTER_ENABLED: process.env.PROFANITY_FILTER_ENABLED || 'true',
+            
+            // Notifications
+            SLACK_WEBHOOK: process.env.SLACK_WEBHOOK
         };
     }
     

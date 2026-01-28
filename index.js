@@ -10,6 +10,7 @@ const DatabaseManager = require('./utils/database');
 const { getFeedDriver, getAvailableFeedTypes } = require('./drivers');
 const { safeLog } = require('./utils/sensitive-data');
 const logger = require('./utils/logger');
+const { sendProfanityAlert } = require('./utils/slack');
 
 /**
  * Main EC2 application function with two-phase processing
@@ -154,6 +155,19 @@ async function runFeedConverter(configFile) {
                     skippedCount++;
                     const wordsList = flaggedWords.length > 0 ? ` (flagged: ${flaggedWords.join(', ')})` : '';
                     logger.info(`❌ Skipped (profanity): ${normalizedPost.title}${wordsList}`);
+
+                    // Send Slack notification for profanity detection
+                    try {
+                        await sendProfanityAlert(config.SLACK_WEBHOOK, {
+                            title: normalizedPost.title,
+                            link: normalizedPost.link,
+                            flaggedWords: flaggedWords,
+                            source: config.EXTERNAL_FEED_SOURCE || config.SITE_NAME || 'Unknown'
+                        });
+                    } catch (error) {
+                        logger.error('Failed to send Slack notification:', error.message);
+                        // Don't throw - we don't want Slack failures to break the feed processing
+                    }
                 }
 
             } catch (error) {
