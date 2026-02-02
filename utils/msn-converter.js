@@ -96,8 +96,8 @@ class MSNConverter {
 
             msnPost += `<media:content url="${thumbnail}" type="image/jpeg" medium="image">
                 <media:title><![CDATA[${post.title}]]></media:title>
-                ${post.excerpt ? `<media:text><![CDATA[${post.excerpt}]]</media:text>
-                <media:description><![CDATA[${post.excerpt}]]</media:description>` : ''}
+                ${post.description ? `<media:text><![CDATA[${post.description}]]></media:text>
+                <media:description><![CDATA[${post.description}]]></media:description>` : ''}
             </media:content>`;
 
             post.images.map((image, index) => {
