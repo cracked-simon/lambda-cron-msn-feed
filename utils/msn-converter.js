@@ -77,7 +77,7 @@ class MSNConverter {
 
             ${isSlideShow ? `<description><![CDATA[${this.cleanDescription(post.description)}]]></description>` : `<description><![CDATA[${this.cleanDescription(post.description)}]]></description>`}
 
-            <media:content url="${thumbnail}" type="image/jpeg" medium="image">
+            <media:content url="${this.escapeXmlUrl(thumbnail)}" type="image/jpeg" medium="image">
                 <media:text><![CDATA[${post.title}]]></media:text>
             </media:content>`;
 
@@ -94,14 +94,14 @@ class MSNConverter {
         if (isSlideShow && post.images) {
             msnPost += '<media:group>';
 
-            msnPost += `<media:content url="${thumbnail}" type="image/jpeg" medium="image">
+            msnPost += `<media:content url="${this.escapeXmlUrl(thumbnail)}" type="image/jpeg" medium="image">
                 <media:title><![CDATA[${post.title}]]></media:title>
                 ${post.description ? `<media:text><![CDATA[${post.description}]]></media:text>
                 <media:description><![CDATA[${post.description}]]></media:description>` : ''}
             </media:content>`;
 
             post.images.map((image, index) => {
-                msnPost += `<media:content url="${image.url}" type="image/jpeg" medium="image">
+                msnPost += `<media:content url="${this.escapeXmlUrl(image.url)}" type="image/jpeg" medium="image">
                                 <media:title><![CDATA[${image.title || post.title}]]></media:title>
                                 ${image.text ? `<media:description><![CDATA[${image.text}]]></media:description>` : ''}
                                 ${image.description ? `<media:text><![CDATA[${image.description}]]></media:text>` : ''}
@@ -116,6 +116,16 @@ class MSNConverter {
         msnPost += '</item>';
 
         return msnPost;
+    }
+    
+    /**
+     * Escape ampersands in URLs for XML attributes
+     * @param {string} url - URL to escape
+     * @returns {string} XML-safe URL
+     */
+    static escapeXmlUrl(url) {
+        if (!url) return '';
+        return url.replace(/&/g, '&amp;');
     }
     
     /**
