@@ -11,39 +11,74 @@ class MSNConverter {
      * @param {string} timezone - IANA timezone (e.g. 'America/New_York')
      * @returns {string} RFC 2822 formatted date string
      */
-    static formatDateInTimezone(date, timezone) {
+    /**
+     * Format a date string that is already in the target timezone as RFC 2822 with the offset.
+     * Does not re-interpret through UTC — treats the date/time values as-is.
+     * @param {string|Date} dateStr - Date string (e.g. "2026-04-13T09:00:00") already in the target timezone
+     * @param {string} timezone - IANA timezone for the offset
+     * @returns {string} RFC 2822 formatted date string
+     */
+    static formatLocalDateWithOffset(dateStr, timezone) {
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        const d = new Date(dateStr);
+        const offset = this.getTimezoneOffset(timezone, d);
+
+        const year = d.getFullYear();
+        const month = d.getMonth();
+        const day = String(d.getDate()).padStart(2, '0');
+        const dayName = days[d.getDay()];
+        const hour = String(d.getHours()).padStart(2, '0');
+        const minute = String(d.getMinutes()).padStart(2, '0');
+        const second = String(d.getSeconds()).padStart(2, '0');
+
+        return `${dayName}, ${day} ${months[month]} ${year} ${hour}:${minute}:${second} ${offset}`;
+    }
+
+    /**
+     * Get the UTC offset string (e.g. "-0400") for an IANA timezone at a given date
+     */
+    static getTimezoneOffset(timezone, date = new Date()) {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            timeZoneName: 'shortOffset'
+        }).formatToParts(date);
+
+        const tzName = (parts.find(p => p.type === 'timeZoneName')?.value) || '';
+        const match = tzName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+        if (!match) return '+0000';
+
+        const sign = match[1];
+        const hrs = match[2].padStart(2, '0');
+        const mins = (match[3] || '00').padStart(2, '0');
+        return `${sign}${hrs}${mins}`;
+    }
+
+    /**
+     * Format a Date as an RFC 2822 string in the given IANA timezone
+     */
+    static formatDateInTimezone(date, timezone) {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
         const parts = new Intl.DateTimeFormat('en-US', {
             timeZone: timezone,
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', second: '2-digit',
-            weekday: 'short', hour12: false,
-            timeZoneName: 'shortOffset'
+            weekday: 'short', hour12: false
         }).formatToParts(date);
 
         const get = (type) => parts.find(p => p.type === type)?.value;
 
-        const dayName = get('weekday');
         const day = get('day');
         const monthIdx = parseInt(get('month'), 10) - 1;
         const year = get('year');
         const hour = get('hour') === '24' ? '00' : get('hour');
         const minute = get('minute');
         const second = get('second');
+        const offset = this.getTimezoneOffset(timezone, date);
 
-        const tzName = get('timeZoneName') || '';
-        const offsetMatch = tzName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
-        let offset = '+0000';
-        if (offsetMatch) {
-            const sign = offsetMatch[1];
-            const hrs = offsetMatch[2].padStart(2, '0');
-            const mins = (offsetMatch[3] || '00').padStart(2, '0');
-            offset = `${sign}${hrs}${mins}`;
-        }
-
-        return `${dayName}, ${day} ${months[monthIdx]} ${year} ${hour}:${minute}:${second} ${offset}`;
+        return `${get('weekday')}, ${day} ${months[monthIdx]} ${year} ${hour}:${minute}:${second} ${offset}`;
     }
 
     /**
@@ -93,7 +128,7 @@ class MSNConverter {
      * @returns {string} Post XML
      */
     static generatePostXML(post, timezone = 'America/Los_Angeles') {
-        const pubDate = this.formatDateInTimezone(new Date(post.pubDate), timezone);
+        const pubDate = this.formatLocalDateWithOffset(post.pubDate, timezone);
         const isSlideShow = post.isSlideShow || false;
 
         let thumbnail = post.featuredImage;
