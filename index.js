@@ -209,7 +209,8 @@ async function runFeedConverter(configFile) {
             siteName: config.SITE_NAME || 'Content Feed',
             siteDescription: config.SITE_DESCRIPTION || 'Content converted to MSN format',
             language: config.SITE_LANGUAGE || 'en-us',
-            copyright: config.SITE_COPYRIGHT || ''
+            copyright: config.SITE_COPYRIGHT || '',
+            timezone: config.TIMEZONE || 'America/Los_Angeles'
         };
 
         // console.log(finalFeedItems);

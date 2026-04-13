@@ -6,6 +6,47 @@ const cheerio = require('cheerio');
  */
 class MSNConverter {
     /**
+     * Format a Date as an RFC 2822 string in the given IANA timezone
+     * @param {Date} date - Date to format
+     * @param {string} timezone - IANA timezone (e.g. 'America/New_York')
+     * @returns {string} RFC 2822 formatted date string
+     */
+    static formatDateInTimezone(date, timezone) {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            weekday: 'short', hour12: false,
+            timeZoneName: 'shortOffset'
+        }).formatToParts(date);
+
+        const get = (type) => parts.find(p => p.type === type)?.value;
+
+        const dayName = get('weekday');
+        const day = get('day');
+        const monthIdx = parseInt(get('month'), 10) - 1;
+        const year = get('year');
+        const hour = get('hour') === '24' ? '00' : get('hour');
+        const minute = get('minute');
+        const second = get('second');
+
+        const tzName = get('timeZoneName') || '';
+        const offsetMatch = tzName.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+        let offset = '+0000';
+        if (offsetMatch) {
+            const sign = offsetMatch[1];
+            const hrs = offsetMatch[2].padStart(2, '0');
+            const mins = (offsetMatch[3] || '00').padStart(2, '0');
+            offset = `${sign}${hrs}${mins}`;
+        }
+
+        return `${dayName}, ${day} ${months[monthIdx]} ${year} ${hour}:${minute}:${second} ${offset}`;
+    }
+
+    /**
      * Convert normalized posts to MSN-compliant XML format
      * @param {string} baseUrl - Base URL of the source site
      * @param {Array<Object>} posts - Array of normalized posts
@@ -17,8 +58,9 @@ class MSNConverter {
         const siteDescription = config.siteDescription || 'Content converted to MSN format';
         const language = config.language || 'en-us';
         const copyright = config.copyright || '';
+        const timezone = config.timezone || 'America/Los_Angeles';
         
-        const pubDate = new Date().toUTCString().replace('GMT', '+0000');
+        const pubDate = this.formatDateInTimezone(new Date(), timezone);
         
         const xml = `<?xml version="1.0" encoding="utf-8"?>
 <rss xmlns:atom="http://www.w3.org/2005/Atom"
@@ -37,7 +79,7 @@ class MSNConverter {
         <pubDate>${pubDate}</pubDate>
         ${copyright ? `<copyright>${copyright}</copyright>` : ''}
         
-        ${posts.map(post => this.generatePostXML(post)).join('\n        ')}
+        ${posts.map(post => this.generatePostXML(post, timezone)).join('\n        ')}
     </channel>
 
 </rss>`;
@@ -50,8 +92,8 @@ class MSNConverter {
      * @param {Object} post - Normalized post object
      * @returns {string} Post XML
      */
-    static generatePostXML(post) {
-        const pubDate = new Date(post.pubDate).toUTCString().replace('GMT', '+0000');
+    static generatePostXML(post, timezone = 'America/Los_Angeles') {
+        const pubDate = this.formatDateInTimezone(new Date(post.pubDate), timezone);
         const isSlideShow = post.isSlideShow || false;
 
         let thumbnail = post.featuredImage;

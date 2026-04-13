@@ -102,6 +102,9 @@ class ConfigLoader {
             PROFANITY_LIST_URL: process.env.PROFANITY_LIST_URL || 'https://raw.githubusercontent.com/cracked-simon/literally-profanity/refs/heads/main/final-list.json',
             PROFANITY_FILTER_ENABLED: process.env.PROFANITY_FILTER_ENABLED || 'true',
             
+            // Timezone
+            TIMEZONE: process.env.TIMEZONE || 'America/Los_Angeles',
+            
             // Notifications
             SLACK_WEBHOOK: process.env.SLACK_WEBHOOK
         };

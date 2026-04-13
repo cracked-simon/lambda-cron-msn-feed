@@ -15,6 +15,7 @@
     "SITE_COPYRIGHT": "Den of Geek",
     "FEED_ITEMS_PER_RUN": 2,
     "FEED_MAX_TOTAL_ITEMS": 40,
-    "PROFANITY_FILTER_ENABLED": true
+    "PROFANITY_FILTER_ENABLED": true,
+    "TIMEZONE": "America/New_York"
   }
 }
