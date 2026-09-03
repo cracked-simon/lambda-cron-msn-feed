@@ -76,28 +76,29 @@ async function saveToFile(fileName, content) {
 /**
  * Invalidate CloudFront distribution
  * @param {string} distributionId - CloudFront distribution ID
- * @param {string} path - Path to invalidate (e.g., '/feed.xml')
+ * @param {string|string[]} paths - Path or paths to invalidate (e.g., '/feed.xml')
  * @param {string} region - AWS region
  * @returns {Promise<Object>} CloudFront invalidation result
  */
-async function invalidateCloudFront(distributionId, path, region = 'us-east-1') {
+async function invalidateCloudFront(distributionId, paths, region = 'us-east-1') {
     try {
         // Configure AWS SDK
         AWS.config.update({ region });
         const cloudfront = new AWS.CloudFront();
+        const pathList = Array.isArray(paths) ? paths : [paths];
         
         const params = {
             DistributionId: distributionId,
             InvalidationBatch: {
                 CallerReference: `rss-to-msn-${Date.now()}`,
                 Paths: {
-                    Quantity: 1,
-                    Items: [path]
+                    Quantity: pathList.length,
+                    Items: pathList
                 }
             }
         };
         
-        safeLog(console.log, `Invalidating CloudFront: ${distributionId} - ${path}`);
+        safeLog(console.log, `Invalidating CloudFront: ${distributionId} - ${pathList.join(', ')}`);
         const result = await cloudfront.createInvalidation(params).promise();
         
         return result;

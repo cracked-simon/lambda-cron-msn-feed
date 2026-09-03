@@ -168,12 +168,13 @@ class WordPressDriver {
                 introContent = $(element).prop('outerHTML') + introContent;
             });
         } else {
-            // If no slides found, use all content
-            introContent = $.html();
+            // If no slides found, use all content without html/head/body wrappers
+            introContent = this.cleanHtmlContent($.html());
         }
         
         return {
-            content: this.stripHtml(introContent),
+            // Keep intro HTML so Yahoo can render slideshows as articles
+            content: introContent,
             isSlideShow: true,
             images: images
         };

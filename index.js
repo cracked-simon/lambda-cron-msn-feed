@@ -6,6 +6,7 @@ const ConfigLoader = require('./utils/config-loader');
 const { getProfanityList, filterProfanity, findProfanityWords, containsProfanity } = require('./utils/profanity');
 const { uploadToS3, saveToFile, invalidateCloudFront, testAWSCredentials } = require('./utils/aws');
 const MSNConverter = require('./utils/msn-converter');
+const YahooConverter = require('./utils/yahoo-converter');
 const DatabaseManager = require('./utils/database');
 const { getFeedDriver, getAvailableFeedTypes } = require('./drivers');
 const { safeLog } = require('./utils/sensitive-data');
@@ -216,8 +217,13 @@ async function runFeedConverter(configFile) {
         // console.log(finalFeedItems);
         const msnFeed = MSNConverter.convertToMSN(config.EXTERNAL_FEED_URL, finalFeedItems, msnConfig);
 
-        // Save feed based on storage configuration
+        logger.info('Converting to Yahoo format...');
+        const yahooFeed = YahooConverter.convertToYahoo(config.EXTERNAL_FEED_URL, finalFeedItems, msnConfig);
+        const yahooFileName = YahooConverter.toYahooFileName(config.FEED_FILE_NAME);
+
+        // Save feeds based on storage configuration
         let storageResult;
+        let yahooStorageResult;
         let cloudFrontInvalidated = false;
         
         if (config.STORAGE === 'file') {
@@ -225,7 +231,10 @@ async function runFeedConverter(configFile) {
             logger.info('========================');
             
             storageResult = await saveToFile(config.FEED_FILE_NAME, msnFeed);
-            logger.info(`✅ Saved to file: ${storageResult.Location}`);
+            logger.info(`✅ Saved MSN feed to file: ${storageResult.Location}`);
+
+            yahooStorageResult = await saveToFile(yahooFileName, yahooFeed);
+            logger.info(`✅ Saved Yahoo feed to file: ${yahooStorageResult.Location}`);
             
         } else {
             logger.info('\n🔄 UPLOADING TO S3');
@@ -238,17 +247,28 @@ async function runFeedConverter(configFile) {
                 config.AWS_REGION,
                 config.S3_FOLDER_NAME
             );
-            logger.info(`✅ Uploaded to S3: ${storageResult.Location}`);
+            logger.info(`✅ Uploaded MSN feed to S3: ${storageResult.Location}`);
+
+            yahooStorageResult = await uploadToS3(
+                config.S3_BUCKET_NAME,
+                yahooFileName,
+                yahooFeed,
+                config.AWS_REGION,
+                config.S3_FOLDER_NAME
+            );
+            logger.info(`✅ Uploaded Yahoo feed to S3: ${yahooStorageResult.Location}`);
 
             // Invalidate CloudFront (only for S3 storage)
             if (config.CLOUDFRONT_DISTRIBUTION_ID) {
                 logger.info('Invalidating CloudFront...');
-                const cloudFrontPath = config.S3_FOLDER_NAME ? 
-                    `/${config.S3_FOLDER_NAME}/${config.FEED_FILE_NAME}` : 
-                    `/${config.FEED_FILE_NAME}`;
+                const prefix = config.S3_FOLDER_NAME ? `/${config.S3_FOLDER_NAME}` : '';
+                const cloudFrontPaths = [
+                    `${prefix}/${config.FEED_FILE_NAME}`,
+                    `${prefix}/${yahooFileName}`
+                ];
                 const invalidationResult = await invalidateCloudFront(
                     config.CLOUDFRONT_DISTRIBUTION_ID,
-                    cloudFrontPath,
+                    cloudFrontPaths,
                     config.AWS_REGION
                 );
                 logger.info(`✅ CloudFront invalidation: ${invalidationResult.Invalidation.Id}`);
@@ -270,6 +290,7 @@ async function runFeedConverter(configFile) {
             skipped: skippedCount,
             feedItems: finalFeedItems.length,
             storageLocation: storageResult.Location,
+            yahooStorageLocation: yahooStorageResult.Location,
             storageType: config.STORAGE,
             cloudFrontInvalidated: cloudFrontInvalidated,
             duration: `${duration}s`
