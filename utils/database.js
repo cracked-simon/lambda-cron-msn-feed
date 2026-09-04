@@ -250,15 +250,17 @@ class DatabaseManager {
      * @param {number} maxItems - Maximum number of items to return
      * @param {Object} config - Configuration object
      * @param {Array<string>} excludeContentHashes - Array of content hashes to exclude from results
+     * @param {string} [feedType] - Feed type override (defaults to config.EXTERNAL_FEED_TYPE)
      */
-    async getPublishedItems(maxItems, config, excludeContentHashes = []) {
+    async getPublishedItems(maxItems, config, excludeContentHashes = [], feedType = null) {
         const maxItemsInt = parseInt(maxItems, 10);
+        const resolvedFeedType = feedType || config.EXTERNAL_FEED_TYPE;
         
         let query = `
             SELECT * FROM ingested_content 
             WHERE source = ? AND status = 'published' AND feed_type = ?
         `;
-        let params = [config.EXTERNAL_FEED_SOURCE, config.EXTERNAL_FEED_TYPE];
+        let params = [config.EXTERNAL_FEED_SOURCE, resolvedFeedType];
 
         safeLog(console.log, 'Exclude content hashes:', excludeContentHashes);
         

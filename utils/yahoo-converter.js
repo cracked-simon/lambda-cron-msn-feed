@@ -22,6 +22,17 @@ class YahooConverter {
     }
 
     /**
+     * Combined Yahoo feed filename for a source.
+     * e.g. denofgeeks → denofgeeks-articles-slideshows-combined-yahoo.xml
+     * @param {string} source - Feed source identifier
+     * @returns {string} Combined Yahoo feed file name
+     */
+    static toCombinedYahooFileName(source) {
+        const prefix = source || 'feed';
+        return `${prefix}-articles-slideshows-combined-yahoo.xml`;
+    }
+
+    /**
      * Convert normalized posts to Yahoo RSS XML format
      * @param {string} baseUrl - Base URL of the source site
      * @param {Array<Object>} posts - Array of normalized posts

@@ -221,9 +221,29 @@ async function runFeedConverter(configFile) {
         const yahooFeed = YahooConverter.convertToYahoo(config.EXTERNAL_FEED_URL, finalFeedItems, msnConfig);
         const yahooFileName = YahooConverter.toYahooFileName(config.FEED_FILE_NAME);
 
+        // Combined Yahoo feed: articles + slideshows (slideshows rendered as articles)
+        const otherFeedType = config.EXTERNAL_FEED_TYPE === 'slideshow' ? 'article' : 'slideshow';
+        const otherPublishedItems = await db.getPublishedItems(
+            config.FEED_MAX_TOTAL_ITEMS,
+            config,
+            [],
+            otherFeedType
+        );
+        const otherFeedItems = otherPublishedItems.map(item =>
+            driver.normalizePost(item.full_content, otherFeedType)
+        );
+        const combinedFeedItems = [...finalFeedItems, ...otherFeedItems]
+            .sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+
+        logger.info(`Combined Yahoo feed: ${finalFeedItems.length} ${config.EXTERNAL_FEED_TYPE} + ${otherFeedItems.length} ${otherFeedType} → ${combinedFeedItems.length} items`);
+
+        const combinedYahooFeed = YahooConverter.convertToYahoo(config.EXTERNAL_FEED_URL, combinedFeedItems, msnConfig);
+        const combinedYahooFileName = YahooConverter.toCombinedYahooFileName(config.EXTERNAL_FEED_SOURCE);
+
         // Save feeds based on storage configuration
         let storageResult;
         let yahooStorageResult;
+        let combinedYahooStorageResult;
         let cloudFrontInvalidated = false;
         
         if (config.STORAGE === 'file') {
@@ -235,6 +255,9 @@ async function runFeedConverter(configFile) {
 
             yahooStorageResult = await saveToFile(yahooFileName, yahooFeed);
             logger.info(`✅ Saved Yahoo feed to file: ${yahooStorageResult.Location}`);
+
+            combinedYahooStorageResult = await saveToFile(combinedYahooFileName, combinedYahooFeed);
+            logger.info(`✅ Saved combined Yahoo feed to file: ${combinedYahooStorageResult.Location}`);
             
         } else {
             logger.info('\n🔄 UPLOADING TO S3');
@@ -258,13 +281,23 @@ async function runFeedConverter(configFile) {
             );
             logger.info(`✅ Uploaded Yahoo feed to S3: ${yahooStorageResult.Location}`);
 
+            combinedYahooStorageResult = await uploadToS3(
+                config.S3_BUCKET_NAME,
+                combinedYahooFileName,
+                combinedYahooFeed,
+                config.AWS_REGION,
+                config.S3_FOLDER_NAME
+            );
+            logger.info(`✅ Uploaded combined Yahoo feed to S3: ${combinedYahooStorageResult.Location}`);
+
             // Invalidate CloudFront (only for S3 storage)
             if (config.CLOUDFRONT_DISTRIBUTION_ID) {
                 logger.info('Invalidating CloudFront...');
                 const prefix = config.S3_FOLDER_NAME ? `/${config.S3_FOLDER_NAME}` : '';
                 const cloudFrontPaths = [
                     `${prefix}/${config.FEED_FILE_NAME}`,
-                    `${prefix}/${yahooFileName}`
+                    `${prefix}/${yahooFileName}`,
+                    `${prefix}/${combinedYahooFileName}`
                 ];
                 const invalidationResult = await invalidateCloudFront(
                     config.CLOUDFRONT_DISTRIBUTION_ID,
@@ -291,6 +324,7 @@ async function runFeedConverter(configFile) {
             feedItems: finalFeedItems.length,
             storageLocation: storageResult.Location,
             yahooStorageLocation: yahooStorageResult.Location,
+            combinedYahooStorageLocation: combinedYahooStorageResult.Location,
             storageType: config.STORAGE,
             cloudFrontInvalidated: cloudFrontInvalidated,
             duration: `${duration}s`
