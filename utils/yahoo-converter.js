@@ -82,7 +82,7 @@ class YahooConverter {
     static generatePostXML(post, timezone = 'America/Los_Angeles') {
         const pubDate = MSNConverter.formatLocalDateWithOffset(post.pubDate, timezone);
         const isSlideShow = post.isSlideShow || false;
-        const thumbnail = this.resolveThumbnail(post);
+        const thumbnail = this.withThumbnailResize(this.resolveThumbnail(post));
         const categories = Array.isArray(post.categories) ? post.categories : [];
 
         let encodedContent;
@@ -103,7 +103,7 @@ class YahooConverter {
 
             ${post.author ? `<dc:creator>${post.author}</dc:creator>` : ''}
 
-            <media:thumbnail url="${MSNConverter.escapeXmlUrl(thumbnail)}" width="1600" height="900" />
+            <media:thumbnail url="${MSNConverter.escapeXmlUrl(thumbnail)}" width="1280" height="720" />
 
             <content:encoded><![CDATA[
                 ${encodedContent}
@@ -122,6 +122,24 @@ class YahooConverter {
             thumbnail = post.featuredImage.url || (post.thumbnail && post.thumbnail.url) || '';
         }
         return thumbnail || '';
+    }
+
+    /**
+     * WordPress (Jetpack) thumbnail URL with a 1280x720 resize crop.
+     * Replaces existing size params such as fit= or w=.
+     * @param {string} url - Original image URL
+     * @returns {string} URL with ?resize=1280,720
+     */
+    static withThumbnailResize(url) {
+        if (!url) return '';
+
+        try {
+            const parsed = new URL(url);
+            return `${parsed.origin}${parsed.pathname}?resize=1280,720`;
+        } catch (error) {
+            const base = String(url).split('?')[0];
+            return `${base}?resize=1280,720`;
+        }
     }
 
     /**
