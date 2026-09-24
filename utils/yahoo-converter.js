@@ -1,3 +1,4 @@
+const cheerio = require('cheerio');
 const MSNConverter = require('./msn-converter');
 
 /**
@@ -99,7 +100,7 @@ class YahooConverter {
             <link>${post.link}</link>
             ${categories.map(cat => `<category><![CDATA[${cat}]]></category>`).join('\n            ')}
 
-            <description><![CDATA[${MSNConverter.cleanDescription(post.description)}]]></description>
+            <description><![CDATA[${this.openingDescription(post)}]]></description>
 
             ${post.author ? `<dc:creator>${post.author}</dc:creator>` : ''}
 
@@ -109,6 +110,59 @@ class YahooConverter {
                 ${encodedContent}
             ]]></content:encoded>
         </item>`;
+    }
+
+    /**
+     * Plain-text opening of the article for the Yahoo description.
+     * Uses the first paragraph of the body. A leading spoiler notice
+     * is kept together with the paragraph that follows it.
+     * @param {Object} post - Normalized post object
+     * @returns {string} Description text
+     */
+    static openingDescription(post) {
+        const paragraphs = this.openingParagraphs(post && post.content);
+        if (paragraphs.length === 0) {
+            return MSNConverter.cleanDescription(post && post.description);
+        }
+
+        const selected = [paragraphs[0]];
+        if (paragraphs.length > 1 && this.isSpoilerNotice(paragraphs[0])) {
+            selected.push(paragraphs[1]);
+        }
+
+        return selected.join(' ');
+    }
+
+    /**
+     * First paragraphs of article HTML, as plain text
+     * @param {string} html - Article or slideshow intro HTML
+     * @returns {string[]} Up to two non-empty paragraphs
+     */
+    static openingParagraphs(html) {
+        if (!html) return [];
+
+        const $ = cheerio.load(html);
+        const paragraphs = [];
+
+        $('p').each((_, element) => {
+            const text = $(element).text().replace(/\s+/g, ' ').trim();
+            if (!text) return;
+
+            paragraphs.push(text);
+            if (paragraphs.length >= 2) return false;
+        });
+
+        return paragraphs;
+    }
+
+    /**
+     * A short standalone spoiler warning, not a lede that mentions spoilers
+     * @param {string} text - Paragraph text
+     * @returns {boolean}
+     */
+    static isSpoilerNotice(text) {
+        if (!text || text.length > 200) return false;
+        return /spoiler/i.test(text);
     }
 
     /**
